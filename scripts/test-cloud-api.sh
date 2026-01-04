@@ -117,8 +117,8 @@ MODELS_RESPONSE=$(curl -s -X GET "https://api.cursor.com/v0/models" -u "$API_KEY
 echo "  Available models: $(echo "$MODELS_RESPONSE" | jq -r '.models // ["unknown"] | join(", ")')"
 echo ""
 
-# Use an available model (pick first from the list)
-SELECTED_MODEL=$(echo "$MODELS_RESPONSE" | jq -r '.models[0] // "gpt-5.2"')
+# Use claude-4.5-opus-high-thinking
+SELECTED_MODEL="claude-4.5-opus-high-thinking"
 echo "  Using model: $SELECTED_MODEL"
 echo ""
 

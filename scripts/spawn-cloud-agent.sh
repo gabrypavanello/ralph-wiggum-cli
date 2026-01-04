@@ -119,11 +119,10 @@ Begin by reading the state files.
 EOF
 )
 
-  # 6. Get available model
+  # 6. Use claude-4.5-opus-high-thinking
   echo "🚀 Spawning Cloud Agent for iteration $NEXT_ITERATION..."
   
-  MODELS_RESPONSE=$(curl -s "https://api.cursor.com/v0/models" -u "$API_KEY:" 2>&1)
-  SELECTED_MODEL=$(echo "$MODELS_RESPONSE" | jq -r '.models[0] // "claude-4.5-opus-high-thinking"')
+  SELECTED_MODEL="claude-4.5-opus-high-thinking"
   echo "   Using model: $SELECTED_MODEL"
   
   # 7. Create Cloud Agent
