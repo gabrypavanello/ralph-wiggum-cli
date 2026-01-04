@@ -34,7 +34,7 @@ Before using Ralph, you need:
 **Fully autonomous.** Spawns Cloud Agents, watches them, chains new ones until task is complete.
 
 ```bash
-./scripts/ralph-loop.sh
+./.cursor/ralph-scripts/ralph-loop.sh
 ```
 
 Best for: Fire-and-forget, overnight runs, "true Ralph"
