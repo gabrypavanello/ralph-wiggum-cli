@@ -4,7 +4,7 @@
 # Runs AI coding agents locally with stream-json parsing for accurate token tracking.
 # Handles context rotation via --resume when thresholds are hit.
 #
-# Supported agents: cursor, claude-code, gemini-cli, copilot-cli
+# Supported agents: cursor, claude-code, codex-cli, gemini-cli, copilot-cli
 #
 # This script is for power users and scripting. For interactive use, see ralph-setup.sh.
 #
@@ -49,7 +49,7 @@ Usage:
   ./ralph-loop.sh [options] [workspace]
 
 Options:
-  -a, --agent AGENT      Agent to use: cursor, claude-code, gemini-cli, copilot-cli
+  -a, --agent AGENT      Agent to use: cursor, claude-code, codex-cli, gemini-cli, copilot-cli
                          (default: cursor, or first available)
   -n, --iterations N     Max iterations (default: 20)
   -m, --model MODEL      Model to use (defaults based on selected agent)
@@ -61,6 +61,7 @@ Options:
 Agents:
   cursor                 Cursor Agent (cursor-agent CLI)
   claude-code            Anthropic Claude Code (claude CLI)
+  codex-cli              OpenAI Codex CLI (codex CLI)
   gemini-cli             Google Gemini CLI (gemini CLI)
   copilot-cli            GitHub Copilot CLI (copilot CLI)
 

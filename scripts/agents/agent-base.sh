@@ -21,6 +21,7 @@
 AVAILABLE_AGENTS=(
   "cursor"
   "claude-code"
+  "codex-cli"
   "gemini-cli"
   "copilot-cli"
 )
@@ -29,6 +30,7 @@ AVAILABLE_AGENTS=(
 declare -A AGENT_DISPLAY_NAMES=(
   ["cursor"]="Cursor Agent"
   ["claude-code"]="Claude Code"
+  ["codex-cli"]="OpenAI Codex CLI"
   ["gemini-cli"]="Gemini CLI"
   ["copilot-cli"]="GitHub Copilot CLI"
 )
@@ -99,6 +101,9 @@ get_install_instructions() {
       ;;
     "claude-code")
       echo "Install via: npm install -g @anthropic-ai/claude-code"
+      ;;
+    "codex-cli")
+      echo "Install via: npm install -g @openai/codex"
       ;;
     "gemini-cli")
       echo "Install via: npm install -g @google/gemini-cli"

@@ -52,6 +52,7 @@ select_agent() {
     echo "Install at least one of these:" >&2
     echo "  • cursor-agent: curl https://cursor.com/install -fsS | bash" >&2
     echo "  • claude:       npm install -g @anthropic-ai/claude-code" >&2
+    echo "  • codex:        npm install -g @openai/codex" >&2
     echo "  • gemini:       npm install -g @google/gemini-cli" >&2
     echo "  • copilot:      npm install -g @github/copilot" >&2
     exit 1

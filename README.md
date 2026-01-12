@@ -5,6 +5,7 @@ An implementation of [Geoffrey Huntley's Ralph Wiggum technique](https://ghuntle
 **Supported Agents:**
 - **Cursor Agent** (`cursor-agent`) - Original Cursor CLI
 - **Claude Code** (`claude`) - Anthropic's Claude Code CLI
+- **OpenAI Codex CLI** (`codex`) - OpenAI's Codex CLI
 - **Gemini CLI** (`gemini`) - Google's Gemini CLI
 - **GitHub Copilot CLI** (`copilot`) - GitHub's Copilot CLI
 
@@ -106,6 +107,7 @@ Install at least one of these AI coding agents:
 |-------|-----|-----------------|-------------|
 | **Cursor Agent** | `cursor-agent` | `curl https://cursor.com/install -fsS \| bash` | ✅ Full |
 | **Claude Code** | `claude` | `npm install -g @anthropic-ai/claude-code` | ✅ Full |
+| **OpenAI Codex CLI** | `codex` | `npm install -g @openai/codex` | ✅ Full |
 | **Gemini CLI** | `gemini` | `npm install -g @google/gemini-cli` | ✅ Full |
 | **GitHub Copilot CLI** | `copilot` | `npm install -g @github/copilot` | ⚠️ Limited* |
 
@@ -252,7 +254,7 @@ cat .ralph/errors.log
 ./ralph-loop.sh [options] [workspace]
 
 Options:
-  -a, --agent AGENT      Agent to use (cursor, claude-code, gemini-cli, copilot-cli)
+  -a, --agent AGENT      Agent to use (cursor, claude-code, codex-cli, gemini-cli, copilot-cli)
   -n, --iterations N     Max iterations (default: 20)
   -m, --model MODEL      Model to use (defaults based on agent)
   --branch NAME          Create and work on a new branch
@@ -265,6 +267,9 @@ Options:
 ```bash
 # Use Claude Code with default model
 ./ralph-loop.sh -a claude-code
+
+# Use OpenAI Codex with specific model
+./ralph-loop.sh -a codex-cli -m gpt-5-codex
 
 # Use Gemini CLI with specific model
 ./ralph-loop.sh -a gemini-cli -m gemini-2.5-pro
@@ -432,6 +437,9 @@ curl https://cursor.com/install -fsS | bash
 # Claude Code
 npm install -g @anthropic-ai/claude-code
 
+# OpenAI Codex CLI
+npm install -g @openai/codex
+
 # Gemini CLI
 npm install -g @google/gemini-cli
 
@@ -447,6 +455,7 @@ Make sure the selected agent's CLI is installed and in your PATH:
 |-------|---------------|
 | Cursor | `which cursor-agent` |
 | Claude Code | `which claude` |
+| OpenAI Codex | `which codex` |
 | Gemini CLI | `which gemini` |
 | Copilot CLI | `which copilot` |
 
@@ -501,6 +510,7 @@ Check if criteria are too vague. Each criterion should be:
 
 - [Cursor CLI docs](https://cursor.com/docs/cli/headless)
 - [Claude Code docs](https://docs.anthropic.com/claude-code)
+- [OpenAI Codex CLI docs](https://github.com/openai/codex)
 - [Gemini CLI docs](https://github.com/google-gemini/gemini-cli)
 - [GitHub Copilot CLI docs](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line)
 
