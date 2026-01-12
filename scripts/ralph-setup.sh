@@ -4,6 +4,12 @@
 # THE main entry point for Ralph. Uses gum for a beautiful CLI experience,
 # falls back to simple prompts if gum is not installed.
 #
+# Supports multiple AI agents:
+#   - Cursor Agent (cursor-agent)
+#   - Claude Code (claude)
+#   - Gemini CLI (gemini)
+#   - GitHub Copilot CLI (copilot)
+#
 # Usage:
 #   ./ralph-setup.sh                    # Interactive setup + run loop
 #   ./ralph-setup.sh /path/to/project   # Run in specific project
@@ -11,7 +17,7 @@
 # Requirements:
 #   - RALPH_TASK.md in the project root
 #   - Git repository
-#   - cursor-agent CLI installed
+#   - At least one supported agent CLI installed
 #   - gum (optional, for enhanced UI): brew install gum
 
 set -euo pipefail
@@ -34,23 +40,96 @@ fi
 # GUM UI HELPERS
 # =============================================================================
 
-# Model options
-MODELS=(
-  "opus-4.5-thinking"
-  "sonnet-4.5-thinking"
-  "gpt-5.2-high"
-  "composer-1"
-  "Custom..."
-)
+# Select agent using gum or fallback
+select_agent() {
+  # Get installed agents
+  local installed_agents
+  installed_agents=($(get_available_agents_for_ui))
+
+  if [[ ${#installed_agents[@]} -eq 0 ]]; then
+    echo "ERROR: No supported agents installed!" >&2
+    echo "" >&2
+    echo "Install at least one of these:" >&2
+    echo "  • cursor-agent: curl https://cursor.com/install -fsS | bash" >&2
+    echo "  • claude:       npm install -g @anthropic-ai/claude-code" >&2
+    echo "  • codex:        npm install -g @openai/codex" >&2
+    echo "  • gemini:       npm install -g @google/gemini-cli" >&2
+    echo "  • copilot:      npm install -g @github/copilot" >&2
+    exit 1
+  fi
+
+  # Build display names for UI
+  local display_names=()
+  for agent in "${installed_agents[@]}"; do
+    display_names+=("$(get_agent_display_name "$agent")")
+  done
+
+  if [[ "$HAS_GUM" == "true" ]]; then
+    local selected_display
+    selected_display=$(gum choose --header "Select AI agent:" "${display_names[@]}")
+
+    # Map display name back to agent ID
+    local i=0
+    for name in "${display_names[@]}"; do
+      if [[ "$name" == "$selected_display" ]]; then
+        echo "${installed_agents[$i]}"
+        return
+      fi
+      ((i++))
+    done
+  else
+    echo ""
+    echo "Select AI agent:"
+    local i=1
+    for name in "${display_names[@]}"; do
+      echo "  $i) $name"
+      ((i++))
+    done
+    echo ""
+    read -p "Choice [1]: " choice
+    choice="${choice:-1}"
+
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#installed_agents[@]} ]]; then
+      echo "${installed_agents[$((choice-1))]}"
+    else
+      echo "${installed_agents[0]}"
+    fi
+  fi
+}
+
+# Get models for selected agent (dynamically loaded)
+get_models_for_agent() {
+  local agent="$1"
+  RALPH_AGENT="$agent"
+  load_selected_agent
+  local models
+  models=($(agent_get_models))
+  # Add Custom option
+  models+=("Custom...")
+  echo "${models[@]}"
+}
 
 # Select model using gum or fallback
+# Args: $1 = agent name (to get appropriate models)
 select_model() {
+  local agent="${1:-cursor}"
+
+  # Get models for this agent
+  local MODELS
+  MODELS=($(get_models_for_agent "$agent"))
+
+  # Get default model for this agent
+  RALPH_AGENT="$agent"
+  load_selected_agent
+  local default_model
+  default_model=$(agent_default_model)
+
   if [[ "$HAS_GUM" == "true" ]]; then
     local selected
     selected=$(gum choose --header "Select model:" "${MODELS[@]}")
-    
+
     if [[ "$selected" == "Custom..." ]]; then
-      selected=$(gum input --placeholder "Enter model name" --value "$DEFAULT_MODEL")
+      selected=$(gum input --placeholder "Enter model name" --value "$default_model")
     fi
     echo "$selected"
   else
@@ -68,7 +147,7 @@ select_model() {
     echo ""
     read -p "Choice [1]: " choice
     choice="${choice:-1}"
-    
+
     if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#MODELS[@]} ]]; then
       local selected="${MODELS[$((choice-1))]}"
       if [[ "$selected" == "Custom..." ]]; then
@@ -229,7 +308,7 @@ main() {
   # ==========================================================================
   # INTERACTIVE SETUP
   # ==========================================================================
-  
+
   echo ""
   if [[ "$HAS_GUM" == "true" ]]; then
     gum style --foreground 212 "Configure your Ralph session:"
@@ -237,16 +316,23 @@ main() {
     echo "Configure your Ralph session:"
   fi
   echo ""
-  
-  # 1. Select model
-  MODEL=$(select_model)
+
+  # 1. Select agent
+  RALPH_AGENT=$(select_agent)
+  load_selected_agent
+  local agent_display_name
+  agent_display_name=$(agent_name)
+  echo "✓ Agent: $agent_display_name ($RALPH_AGENT)"
+
+  # 2. Select model (based on selected agent)
+  MODEL=$(select_model "$RALPH_AGENT")
   echo "✓ Model: $MODEL"
-  
-  # 2. Max iterations
+
+  # 3. Max iterations
   MAX_ITERATIONS=$(get_max_iterations)
   echo "✓ Max iterations: $MAX_ITERATIONS"
-  
-  # 3. Options
+
+  # 4. Options
   local selected_options
   selected_options=$(select_options)
   
@@ -291,6 +377,7 @@ main() {
   
   echo "─────────────────────────────────────────────────────────────────"
   echo "Summary:"
+  echo "  • Agent:      $agent_display_name"
   echo "  • Model:      $MODEL"
   echo "  • Iterations: $MAX_ITERATIONS max"
   [[ -n "$USE_BRANCH" ]] && echo "  • Branch:     $USE_BRANCH"
@@ -309,6 +396,7 @@ main() {
   # ==========================================================================
   
   # Export settings for the loop
+  export RALPH_AGENT
   export MODEL
   export MAX_ITERATIONS
   export USE_BRANCH
