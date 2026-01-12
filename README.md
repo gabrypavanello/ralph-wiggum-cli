@@ -1,6 +1,12 @@
-# Ralph Wiggum for Cursor
+# Ralph Wiggum Multi-Agent
 
-An implementation of [Geoffrey Huntley's Ralph Wiggum technique](https://ghuntley.com/ralph/) for Cursor, enabling autonomous AI development with deliberate context management.
+An implementation of [Geoffrey Huntley's Ralph Wiggum technique](https://ghuntley.com/ralph/) for multiple AI coding agents, enabling autonomous AI development with deliberate context management.
+
+**Supported Agents:**
+- **Cursor Agent** (`cursor-agent`) - Original Cursor CLI
+- **Claude Code** (`claude`) - Anthropic's Claude Code CLI
+- **Gemini CLI** (`gemini`) - Google's Gemini CLI
+- **GitHub Copilot CLI** (`copilot`) - GitHub's Copilot CLI
 
 > "That's the beauty of Ralph - the technique is deterministically bad in an undeterministic world."
 
@@ -41,13 +47,24 @@ This creates two problems:
 │              ┌────────────┴────────────┐                    │
 │              ▼                         ▼                    │
 │         [gum UI]                  [fallback]                │
-│     Model selection            Simple prompts               │
+│     Agent selection            Simple prompts               │
+│     Model selection                                         │
 │     Max iterations                                          │
 │     Options (branch, PR)                                    │
 │              │                         │                    │
 │              └────────────┬────────────┘                    │
 │                           ▼                                  │
-│    cursor-agent -p --force --output-format stream-json       │
+│              ┌────────────────────────┐                     │
+│              │    Agent Adapters      │                     │
+│              │  ┌─────┬──────┬─────┐  │                     │
+│              │  │Cursor│Claude│Gemini│ │                     │
+│              │  │      │ Code │ CLI  │ │                     │
+│              │  ├─────┴──────┴─────┤  │                     │
+│              │  │   Copilot CLI    │  │                     │
+│              │  └──────────────────┘  │                     │
+│              └────────────────────────┘                     │
+│                           │                                  │
+│           <agent> --output-format stream-json               │
 │                           │                                  │
 │                           ▼                                  │
 │                   stream-parser.sh                           │
@@ -65,7 +82,8 @@ This creates two problems:
 ```
 
 **Key features:**
-- **Interactive setup** - Beautiful gum-based UI for model selection and options
+- **Multi-agent support** - Use Cursor, Claude Code, Gemini CLI, or Copilot CLI
+- **Interactive setup** - Beautiful gum-based UI for agent, model selection and options
 - **Accurate token tracking** - Parser counts actual bytes from every file read/write
 - **Gutter detection** - Detects when agent is stuck (same command failed 3x, file thrashing)
 - **Learning from failures** - Agent updates `.ralph/guardrails.md` with lessons
@@ -77,8 +95,21 @@ This creates two problems:
 | Requirement | Check | How to Set Up |
 |-------------|-------|---------------|
 | **Git repo** | `git status` works | `git init` |
-| **cursor-agent CLI** | `which cursor-agent` | `curl https://cursor.com/install -fsS \| bash` |
+| **At least one agent** | See below | Install any supported agent |
 | **gum** (optional) | `which gum` | Installer offers to install, or `brew install gum` |
+
+### Supported Agents
+
+Install at least one of these AI coding agents:
+
+| Agent | CLI | Install Command |
+|-------|-----|-----------------|
+| **Cursor Agent** | `cursor-agent` | `curl https://cursor.com/install -fsS \| bash` |
+| **Claude Code** | `claude` | `npm install -g @anthropic-ai/claude-code` |
+| **Gemini CLI** | `gemini` | `npm install -g @google/gemini-cli` |
+| **GitHub Copilot CLI** | `copilot` | `npm install -g @github/copilot` |
+
+Ralph will automatically detect which agents are installed and let you choose.
 
 ## Quick Start
 
@@ -98,7 +129,13 @@ your-project/
 │   ├── ralph-once.sh           # Single iteration (testing)
 │   ├── stream-parser.sh        # Token tracking
 │   ├── ralph-common.sh         # Shared functions
-│   └── init-ralph.sh           # Re-initialize if needed
+│   ├── init-ralph.sh           # Re-initialize if needed
+│   └── agents/                 # Agent adapters
+│       ├── agent-base.sh       # Base agent system
+│       ├── cursor.sh           # Cursor Agent adapter
+│       ├── claude-code.sh      # Claude Code adapter
+│       ├── gemini-cli.sh       # Gemini CLI adapter
+│       └── copilot-cli.sh      # Copilot CLI adapter
 ├── .ralph/                     # State files (tracked in git)
 │   ├── progress.md             # Agent updates: what's done
 │   ├── guardrails.md           # Lessons learned (Signs)
@@ -113,14 +150,19 @@ The installer will offer to install gum automatically. You can also:
 - Skip the prompt and auto-install: `curl ... | INSTALL_GUM=1 bash`
 - Install manually: `brew install gum` (macOS) or see [gum installation](https://github.com/charmbracelet/gum#installation)
 
-With gum, you get a beautiful interactive menu for selecting models and options:
+With gum, you get a beautiful interactive menu for selecting agents, models and options:
 
 ```
+? Select AI agent:
+  ◉ Cursor Agent
+  ◯ Claude Code
+  ◯ Gemini CLI
+  ◯ GitHub Copilot CLI
+
 ? Select model:
-  ◉ opus-4.5-thinking
-  ◯ sonnet-4.5-thinking
-  ◯ gpt-5.2-high
-  ◯ composer-1
+  ◉ claude-sonnet-4-20250514
+  ◯ claude-opus-4-20250514
+  ◯ claude-3-5-sonnet-20241022
   ◯ Custom...
 
 ? Max iterations: 20
@@ -132,7 +174,7 @@ With gum, you get a beautiful interactive menu for selecting models and options:
   ◯ Open PR when complete
 ```
 
-Without gum, Ralph falls back to simple numbered prompts.
+Without gum, Ralph falls back to simple numbered prompts. Model options are dynamically loaded based on the selected agent.
 
 ### 3. Define Your Task
 
@@ -208,8 +250,9 @@ cat .ralph/errors.log
 ./ralph-loop.sh [options] [workspace]
 
 Options:
+  -a, --agent AGENT      Agent to use (cursor, claude-code, gemini-cli, copilot-cli)
   -n, --iterations N     Max iterations (default: 20)
-  -m, --model MODEL      Model to use (default: opus-4.5-thinking)
+  -m, --model MODEL      Model to use (defaults based on agent)
   --branch NAME          Create and work on a new branch
   --pr                   Open PR when complete (requires --branch)
   -y, --yes              Skip confirmation prompt
@@ -218,10 +261,16 @@ Options:
 **Examples:**
 
 ```bash
-# Scripted PR workflow
-./ralph-loop.sh --branch feature/api --pr -y
+# Use Claude Code with default model
+./ralph-loop.sh -a claude-code
 
-# Use a different model with more iterations
+# Use Gemini CLI with specific model
+./ralph-loop.sh -a gemini-cli -m gemini-2.5-pro
+
+# Scripted PR workflow with Copilot
+./ralph-loop.sh -a copilot-cli --branch feature/api --pr -y
+
+# Use Cursor (default) with more iterations
 ./ralph-loop.sh -n 50 -m gpt-5.2-high
 ```
 
@@ -345,15 +394,24 @@ Configuration is set via command-line flags or environment variables:
 
 ```bash
 # Via flags (recommended)
-./ralph-loop.sh -n 50 -m gpt-5.2-high
+./ralph-loop.sh -a claude-code -n 50 -m claude-sonnet-4-20250514
 
 # Via environment
-RALPH_MODEL=gpt-5.2-high MAX_ITERATIONS=50 ./ralph-loop.sh
+RALPH_AGENT=claude-code RALPH_MODEL=claude-sonnet-4-20250514 MAX_ITERATIONS=50 ./ralph-loop.sh
 ```
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `RALPH_AGENT` | Agent to use | `cursor` |
+| `RALPH_MODEL` | Model name | Agent-specific default |
+| `MAX_ITERATIONS` | Max rotations | `20` |
+| `WARN_THRESHOLD` | Token warning | `70000` |
+| `ROTATE_THRESHOLD` | Token rotation | `80000` |
 
 Default thresholds in `ralph-common.sh`:
 
 ```bash
+RALPH_AGENT=cursor      # Default agent
 MAX_ITERATIONS=20       # Max rotations before giving up
 WARN_THRESHOLD=70000    # Tokens: send wrapup warning
 ROTATE_THRESHOLD=80000  # Tokens: force rotation
@@ -361,11 +419,34 @@ ROTATE_THRESHOLD=80000  # Tokens: force rotation
 
 ## Troubleshooting
 
-### "cursor-agent CLI not found"
+### "No supported agents installed"
+
+Install at least one agent:
 
 ```bash
+# Cursor Agent
 curl https://cursor.com/install -fsS | bash
+
+# Claude Code
+npm install -g @anthropic-ai/claude-code
+
+# Gemini CLI
+npm install -g @google/gemini-cli
+
+# GitHub Copilot CLI
+npm install -g @github/copilot
 ```
+
+### "Agent CLI not found"
+
+Make sure the selected agent's CLI is installed and in your PATH:
+
+| Agent | Check Command |
+|-------|---------------|
+| Cursor | `which cursor-agent` |
+| Claude Code | `which claude` |
+| Gemini CLI | `which gemini` |
+| Copilot CLI | `which copilot` |
 
 ### Agent keeps failing on same thing
 
@@ -412,13 +493,20 @@ Check if criteria are too vague. Each criterion should be:
 
 - [Original Ralph technique](https://ghuntley.com/ralph/) - Geoffrey Huntley
 - [Context as memory](https://ghuntley.com/allocations/) - The malloc/free metaphor
-- [Cursor CLI docs](https://cursor.com/docs/cli/headless)
 - [gum - A tool for glamorous shell scripts](https://github.com/charmbracelet/gum)
+
+### Agent Documentation
+
+- [Cursor CLI docs](https://cursor.com/docs/cli/headless)
+- [Claude Code docs](https://docs.anthropic.com/claude-code)
+- [Gemini CLI docs](https://github.com/google-gemini/gemini-cli)
+- [GitHub Copilot CLI docs](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line)
 
 ## Credits
 
 - **Original technique**: [Geoffrey Huntley](https://ghuntley.com/ralph/) - the Ralph Wiggum methodology
-- **Cursor port**: [Agrim Singh](https://x.com/agrimsingh) - this implementation
+- **Cursor port**: [Agrim Singh](https://x.com/agrimsingh) - original Cursor implementation
+- **Multi-agent support**: Extended to support Claude Code, Gemini CLI, and Copilot CLI
 
 ## License
 

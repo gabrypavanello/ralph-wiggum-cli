@@ -3,6 +3,7 @@
 #
 # Shared functions for ralph-loop.sh and ralph-setup.sh
 # All state lives in .ralph/ within the project.
+# Supports multiple AI agents: Cursor, Claude Code, Gemini CLI, Copilot CLI
 
 # =============================================================================
 # CONFIGURATION (can be overridden before sourcing)
@@ -15,14 +16,60 @@ ROTATE_THRESHOLD="${ROTATE_THRESHOLD:-80000}"
 # Iteration limits
 MAX_ITERATIONS="${MAX_ITERATIONS:-20}"
 
-# Model selection
-DEFAULT_MODEL="opus-4.5-thinking"
-MODEL="${RALPH_MODEL:-$DEFAULT_MODEL}"
+# Agent selection (cursor, claude-code, gemini-cli, copilot-cli)
+RALPH_AGENT="${RALPH_AGENT:-cursor}"
+
+# Model selection (defaults set per-agent, can be overridden)
+MODEL="${RALPH_MODEL:-}"
 
 # Feature flags (set by caller)
 USE_BRANCH="${USE_BRANCH:-}"
 OPEN_PR="${OPEN_PR:-false}"
 SKIP_CONFIRM="${SKIP_CONFIRM:-false}"
+
+# =============================================================================
+# AGENT SYSTEM
+# =============================================================================
+
+# Source agent base and load selected agent
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_SCRIPT_DIR/agents/agent-base.sh"
+
+# Load the selected agent adapter
+load_selected_agent() {
+  local agent="${RALPH_AGENT:-cursor}"
+  load_agent "$agent"
+
+  # Set default model if not specified
+  if [[ -z "$MODEL" ]]; then
+    MODEL=$(agent_default_model)
+  fi
+}
+
+# Get list of installed agents for UI
+get_available_agents_for_ui() {
+  local installed=()
+  for agent in "${AVAILABLE_AGENTS[@]}"; do
+    local agent_file="$_SCRIPT_DIR/agents/${agent}.sh"
+    if [[ -f "$agent_file" ]]; then
+      source "$agent_file"
+      if agent_check 2>/dev/null; then
+        installed+=("$agent")
+      fi
+    fi
+  done
+  echo "${installed[@]}"
+}
+
+# Get models for current agent
+get_agent_models() {
+  local agent="${RALPH_AGENT:-cursor}"
+  local agent_file="$_SCRIPT_DIR/agents/${agent}.sh"
+  if [[ -f "$agent_file" ]]; then
+    source "$agent_file"
+    agent_get_models
+  fi
+}
 
 # =============================================================================
 # BASIC HELPERS
@@ -366,6 +413,11 @@ run_iteration() {
   rm -f "$fifo"
   mkfifo "$fifo"
   
+  # Load agent to get display name
+  load_selected_agent
+  local agent_display_name
+  agent_display_name=$(agent_name)
+
   # Use stderr for display (stdout is captured for signal)
   echo "" >&2
   echo "═══════════════════════════════════════════════════════════════════" >&2
@@ -373,19 +425,23 @@ run_iteration() {
   echo "═══════════════════════════════════════════════════════════════════" >&2
   echo "" >&2
   echo "Workspace: $workspace" >&2
+  echo "Agent:     $agent_display_name ($RALPH_AGENT)" >&2
   echo "Model:     $MODEL" >&2
   echo "Monitor:   tail -f $workspace/.ralph/activity.log" >&2
   echo "" >&2
   
   # Log session start to progress.md
-  log_progress "$workspace" "**Session $iteration started** (model: $MODEL)"
-  
-  # Build cursor-agent command
-  local cmd="cursor-agent -p --force --output-format stream-json --model $MODEL"
-  
+  log_progress "$workspace" "**Session $iteration started** (agent: $RALPH_AGENT, model: $MODEL)"
+
+  # Load the selected agent adapter
+  load_selected_agent
+
+  # Build agent command using the adapter
+  local cmd
+  cmd=$(agent_build_cmd "$MODEL" "$session_id")
+
   if [[ -n "$session_id" ]]; then
     echo "Resuming session: $session_id" >&2
-    cmd="$cmd --resume=\"$session_id\""
   fi
   
   # Change to workspace
@@ -599,7 +655,7 @@ run_ralph_loop() {
 check_prerequisites() {
   local workspace="$1"
   local task_file="$workspace/RALPH_TASK.md"
-  
+
   # Check for task file
   if [[ ! -f "$task_file" ]]; then
     echo "❌ No RALPH_TASK.md found in $workspace"
@@ -617,23 +673,30 @@ check_prerequisites() {
     echo "  EOF"
     return 1
   fi
-  
-  # Check for cursor-agent CLI
-  if ! command -v cursor-agent &> /dev/null; then
-    echo "❌ cursor-agent CLI not found"
+
+  # Load the selected agent adapter
+  load_selected_agent
+
+  # Check for agent CLI
+  if ! agent_check; then
+    local cli_name
+    cli_name=$(agent_cli_name)
+    local agent_display
+    agent_display=$(agent_name)
+
+    echo "❌ $agent_display CLI not found ($cli_name)"
     echo ""
-    echo "Install via:"
-    echo "  curl https://cursor.com/install -fsS | bash"
+    agent_install_instructions
     return 1
   fi
-  
+
   # Check for git repo
   if ! git -C "$workspace" rev-parse --git-dir > /dev/null 2>&1; then
     echo "❌ Not a git repository"
     echo "   Ralph requires git for state persistence."
     return 1
   fi
-  
+
   return 0
 }
 

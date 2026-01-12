@@ -1,11 +1,13 @@
 #!/bin/bash
 # Ralph Wiggum: Stream Parser
 #
-# Parses cursor-agent stream-json output in real-time.
+# Parses stream-json output from various AI coding agents in real-time.
+# Supports: Cursor Agent, Claude Code, Gemini CLI, GitHub Copilot CLI
+#
 # Tracks token usage, detects failures/gutter, writes to .ralph/ logs.
 #
 # Usage:
-#   cursor-agent -p --force --output-format stream-json "..." | ./stream-parser.sh /path/to/workspace
+#   <agent-cli> --output-format stream-json "..." | ./stream-parser.sh /path/to/workspace
 #
 # Outputs to stdout:
 #   - ROTATE when threshold hit (80k tokens)
@@ -16,6 +18,8 @@
 # Writes to .ralph/:
 #   - activity.log: all operations with context health
 #   - errors.log: failures and gutter detection
+#
+# The parser is designed to be agent-agnostic and handles common stream-json formats.
 
 set -euo pipefail
 
@@ -164,38 +168,65 @@ track_file_write() {
   fi
 }
 
+# Extract text content from various JSON formats (agent-agnostic)
+extract_text_content() {
+  local line="$1"
+
+  # Try different content extraction patterns (supports multiple agents)
+  local text=""
+
+  # Pattern 1: Cursor-style .message.content[0].text
+  text=$(echo "$line" | jq -r '.message.content[0].text // empty' 2>/dev/null) || true
+  [[ -n "$text" ]] && echo "$text" && return
+
+  # Pattern 2: Claude Code style .content[0].text
+  text=$(echo "$line" | jq -r '.content[0].text // empty' 2>/dev/null) || true
+  [[ -n "$text" ]] && echo "$text" && return
+
+  # Pattern 3: Direct .text field
+  text=$(echo "$line" | jq -r '.text // empty' 2>/dev/null) || true
+  [[ -n "$text" ]] && echo "$text" && return
+
+  # Pattern 4: .message.text
+  text=$(echo "$line" | jq -r '.message.text // empty' 2>/dev/null) || true
+  [[ -n "$text" ]] && echo "$text" && return
+
+  echo ""
+}
+
 # Process a single JSON line from stream
 process_line() {
   local line="$1"
-  
+
   # Skip empty lines
   [[ -z "$line" ]] && return
-  
-  # Parse JSON type
+
+  # Parse JSON type (supports various agent formats)
   local type=$(echo "$line" | jq -r '.type // empty' 2>/dev/null) || return
   local subtype=$(echo "$line" | jq -r '.subtype // empty' 2>/dev/null) || true
-  
+
   case "$type" in
-    "system")
-      if [[ "$subtype" == "init" ]]; then
-        local model=$(echo "$line" | jq -r '.model // "unknown"' 2>/dev/null) || model="unknown"
+    "system"|"init"|"start")
+      local model=$(echo "$line" | jq -r '.model // .modelId // "unknown"' 2>/dev/null) || model="unknown"
+      if [[ "$subtype" == "init" ]] || [[ "$type" == "init" ]] || [[ "$type" == "start" ]]; then
         log_activity "SESSION START: model=$model"
       fi
       ;;
-      
-    "assistant")
-      # Track assistant message characters
-      local text=$(echo "$line" | jq -r '.message.content[0].text // empty' 2>/dev/null) || text=""
+
+    "assistant"|"message"|"text"|"content")
+      # Track assistant message characters (agent-agnostic)
+      local text
+      text=$(extract_text_content "$line")
       if [[ -n "$text" ]]; then
         local chars=${#text}
         ASSISTANT_CHARS=$((ASSISTANT_CHARS + chars))
-        
+
         # Check for completion sigil
         if [[ "$text" == *"<ralph>COMPLETE</ralph>"* ]]; then
           log_activity "✅ Agent signaled COMPLETE"
           echo "COMPLETE" 2>/dev/null || true
         fi
-        
+
         # Check for gutter sigil
         if [[ "$text" == *"<ralph>GUTTER</ralph>"* ]]; then
           log_activity "🚨 Agent signaled GUTTER (stuck)"
@@ -203,18 +234,20 @@ process_line() {
         fi
       fi
       ;;
-      
-    "tool_call")
-      if [[ "$subtype" == "started" ]]; then
+
+    "tool_call"|"tool_use"|"tool")
+      if [[ "$subtype" == "started" ]] || [[ "$subtype" == "start" ]]; then
         TOOL_CALLS=$((TOOL_CALLS + 1))
-        
-      elif [[ "$subtype" == "completed" ]]; then
-        # Handle read tool completion
-        if echo "$line" | jq -e '.tool_call.readToolCall.result.success' > /dev/null 2>&1; then
-          local path=$(echo "$line" | jq -r '.tool_call.readToolCall.args.path // "unknown"' 2>/dev/null) || path="unknown"
-          local lines=$(echo "$line" | jq -r '.tool_call.readToolCall.result.success.totalLines // 0' 2>/dev/null) || lines=0
-          
-          local content_size=$(echo "$line" | jq -r '.tool_call.readToolCall.result.success.contentSize // 0' 2>/dev/null) || content_size=0
+
+      elif [[ "$subtype" == "completed" ]] || [[ "$subtype" == "complete" ]] || [[ "$subtype" == "result" ]]; then
+        # Handle read tool completion (supports multiple formats)
+        local tool_name=$(echo "$line" | jq -r '.tool_call.name // .name // .tool // ""' 2>/dev/null) || tool_name=""
+
+        if echo "$line" | jq -e '.tool_call.readToolCall.result.success // .result.success // false' > /dev/null 2>&1 || [[ "$tool_name" =~ [Rr]ead ]]; then
+          local path=$(echo "$line" | jq -r '.tool_call.readToolCall.args.path // .args.path // .input.path // "unknown"' 2>/dev/null) || path="unknown"
+          local lines=$(echo "$line" | jq -r '.tool_call.readToolCall.result.success.totalLines // .result.totalLines // .result.lines // 0' 2>/dev/null) || lines=0
+
+          local content_size=$(echo "$line" | jq -r '.tool_call.readToolCall.result.success.contentSize // .result.contentSize // .result.size // 0' 2>/dev/null) || content_size=0
           local bytes
           if [[ $content_size -gt 0 ]]; then
             bytes=$content_size
@@ -222,33 +255,33 @@ process_line() {
             bytes=$((lines * 100))  # ~100 chars/line for code
           fi
           BYTES_READ=$((BYTES_READ + bytes))
-          
+
           local kb=$(echo "scale=1; $bytes / 1024" | bc 2>/dev/null || echo "$((bytes / 1024))")
           log_activity "READ $path ($lines lines, ~${kb}KB)"
-          
-        # Handle write tool completion
-        elif echo "$line" | jq -e '.tool_call.writeToolCall.result.success' > /dev/null 2>&1; then
-          local path=$(echo "$line" | jq -r '.tool_call.writeToolCall.args.path // "unknown"' 2>/dev/null) || path="unknown"
-          local lines=$(echo "$line" | jq -r '.tool_call.writeToolCall.result.success.linesCreated // 0' 2>/dev/null) || lines=0
-          local bytes=$(echo "$line" | jq -r '.tool_call.writeToolCall.result.success.fileSize // 0' 2>/dev/null) || bytes=0
+
+        # Handle write tool completion (supports multiple formats)
+        elif echo "$line" | jq -e '.tool_call.writeToolCall.result.success // false' > /dev/null 2>&1 || [[ "$tool_name" =~ [Ww]rite|[Ee]dit ]]; then
+          local path=$(echo "$line" | jq -r '.tool_call.writeToolCall.args.path // .args.path // .input.path // "unknown"' 2>/dev/null) || path="unknown"
+          local lines=$(echo "$line" | jq -r '.tool_call.writeToolCall.result.success.linesCreated // .result.linesCreated // .result.lines // 0' 2>/dev/null) || lines=0
+          local bytes=$(echo "$line" | jq -r '.tool_call.writeToolCall.result.success.fileSize // .result.fileSize // .result.size // 0' 2>/dev/null) || bytes=0
           BYTES_WRITTEN=$((BYTES_WRITTEN + bytes))
-          
+
           local kb=$(echo "scale=1; $bytes / 1024" | bc 2>/dev/null || echo "$((bytes / 1024))")
           log_activity "WRITE $path ($lines lines, ${kb}KB)"
-          
+
           # Track for thrashing detection
           track_file_write "$path"
-          
-        # Handle shell tool completion
-        elif echo "$line" | jq -e '.tool_call.shellToolCall.result' > /dev/null 2>&1; then
-          local cmd=$(echo "$line" | jq -r '.tool_call.shellToolCall.args.command // "unknown"' 2>/dev/null) || cmd="unknown"
-          local exit_code=$(echo "$line" | jq -r '.tool_call.shellToolCall.result.exitCode // 0' 2>/dev/null) || exit_code=0
-          
-          local stdout=$(echo "$line" | jq -r '.tool_call.shellToolCall.result.stdout // ""' 2>/dev/null) || stdout=""
-          local stderr=$(echo "$line" | jq -r '.tool_call.shellToolCall.result.stderr // ""' 2>/dev/null) || stderr=""
+
+        # Handle shell/bash tool completion (supports multiple formats)
+        elif echo "$line" | jq -e '.tool_call.shellToolCall.result // .tool_call.bashToolCall.result // false' > /dev/null 2>&1 || [[ "$tool_name" =~ [Ss]hell|[Bb]ash|[Cc]ommand ]]; then
+          local cmd=$(echo "$line" | jq -r '.tool_call.shellToolCall.args.command // .tool_call.bashToolCall.args.command // .args.command // .input.command // "unknown"' 2>/dev/null) || cmd="unknown"
+          local exit_code=$(echo "$line" | jq -r '.tool_call.shellToolCall.result.exitCode // .tool_call.bashToolCall.result.exitCode // .result.exitCode // .result.exit_code // 0' 2>/dev/null) || exit_code=0
+
+          local stdout=$(echo "$line" | jq -r '.tool_call.shellToolCall.result.stdout // .tool_call.bashToolCall.result.stdout // .result.stdout // .result.output // ""' 2>/dev/null) || stdout=""
+          local stderr=$(echo "$line" | jq -r '.tool_call.shellToolCall.result.stderr // .tool_call.bashToolCall.result.stderr // .result.stderr // ""' 2>/dev/null) || stderr=""
           local output_chars=$((${#stdout} + ${#stderr}))
           SHELL_OUTPUT_CHARS=$((SHELL_OUTPUT_CHARS + output_chars))
-          
+
           if [[ $exit_code -eq 0 ]]; then
             if [[ $output_chars -gt 1024 ]]; then
               log_activity "SHELL $cmd → exit 0 (${output_chars} chars output)"
@@ -260,14 +293,14 @@ process_line() {
             track_shell_failure "$cmd" "$exit_code"
           fi
         fi
-        
+
         # Check thresholds after each tool call
         check_gutter
       fi
       ;;
-      
-    "result")
-      local duration=$(echo "$line" | jq -r '.duration_ms // 0' 2>/dev/null) || duration=0
+
+    "result"|"end"|"done"|"complete")
+      local duration=$(echo "$line" | jq -r '.duration_ms // .duration // .elapsed_ms // 0' 2>/dev/null) || duration=0
       local tokens=$(calc_tokens)
       log_activity "SESSION END: ${duration}ms, ~$tokens tokens used"
       ;;
