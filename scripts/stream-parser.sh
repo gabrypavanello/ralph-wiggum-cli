@@ -307,20 +307,58 @@ process_line() {
   esac
 }
 
-# Main loop: read JSON lines from stdin
+# Process text output (for agents without stream-json support)
+# Attempts to extract useful information from plain text output
+process_text_line() {
+  local line="$1"
+
+  # Skip empty lines
+  [[ -z "$line" ]] && return
+
+  # Track approximate output size for token estimation
+  local chars=${#line}
+  ASSISTANT_CHARS=$((ASSISTANT_CHARS + chars))
+
+  # Check for completion sigil in text output
+  if [[ "$line" == *"<ralph>COMPLETE</ralph>"* ]]; then
+    log_activity "✅ Agent signaled COMPLETE"
+    echo "COMPLETE" 2>/dev/null || true
+  fi
+
+  # Check for gutter sigil in text output
+  if [[ "$line" == *"<ralph>GUTTER</ralph>"* ]]; then
+    log_activity "🚨 Agent signaled GUTTER (stuck)"
+    echo "GUTTER" 2>/dev/null || true
+  fi
+
+  # Check thresholds periodically
+  check_gutter
+}
+
+# Main loop: read lines from stdin (JSON or text)
 main() {
   # Initialize activity log for this session
   echo "" >> "$RALPH_DIR/activity.log"
   echo "═══════════════════════════════════════════════════════════════" >> "$RALPH_DIR/activity.log"
   echo "Ralph Session Started: $(date)" >> "$RALPH_DIR/activity.log"
   echo "═══════════════════════════════════════════════════════════════" >> "$RALPH_DIR/activity.log"
-  
+
   # Track last token log time
   local last_token_log=$(date +%s)
-  
+
   while IFS= read -r line; do
-    process_line "$line"
-    
+    # Skip empty lines
+    [[ -z "$line" ]] && continue
+
+    # Try to detect if line is JSON (starts with '{')
+    if [[ "$line" == "{"* ]]; then
+      # Process as JSON
+      process_line "$line"
+    else
+      # Process as plain text (for agents without stream-json support)
+      process_text_line "$line"
+    fi
+
     # Log token status every 30 seconds
     local now=$(date +%s)
     if [[ $((now - last_token_log)) -ge 30 ]]; then
@@ -328,7 +366,7 @@ main() {
       last_token_log=$now
     fi
   done
-  
+
   # Final token status
   log_token_status
 }

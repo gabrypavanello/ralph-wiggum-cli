@@ -102,12 +102,14 @@ This creates two problems:
 
 Install at least one of these AI coding agents:
 
-| Agent | CLI | Install Command |
-|-------|-----|-----------------|
-| **Cursor Agent** | `cursor-agent` | `curl https://cursor.com/install -fsS \| bash` |
-| **Claude Code** | `claude` | `npm install -g @anthropic-ai/claude-code` |
-| **Gemini CLI** | `gemini` | `npm install -g @google/gemini-cli` |
-| **GitHub Copilot CLI** | `copilot` | `npm install -g @github/copilot` |
+| Agent | CLI | Install Command | Stream JSON |
+|-------|-----|-----------------|-------------|
+| **Cursor Agent** | `cursor-agent` | `curl https://cursor.com/install -fsS \| bash` | ✅ Full |
+| **Claude Code** | `claude` | `npm install -g @anthropic-ai/claude-code` | ✅ Full |
+| **Gemini CLI** | `gemini` | `npm install -g @google/gemini-cli` | ✅ Full |
+| **GitHub Copilot CLI** | `copilot` | `npm install -g @github/copilot` | ⚠️ Limited* |
+
+*GitHub Copilot CLI does not yet support `--output-format stream-json` ([github/copilot-cli#52](https://github.com/github/copilot-cli/issues/52)). Token tracking will be limited when using this agent.
 
 Ralph will automatically detect which agents are installed and let you choose.
 

@@ -6,6 +6,7 @@
 # CLI: gemini
 # Output: stream-json format (via --output-format)
 # Docs: https://github.com/google-gemini/gemini-cli
+#       https://geminicli.com/docs/cli/headless/
 
 # =============================================================================
 # AGENT INTERFACE IMPLEMENTATION
@@ -54,17 +55,13 @@ agent_build_cmd() {
   local model="$1"
   local session_id="${2:-}"
 
-  # Gemini CLI supports --output-format stream-json for streaming JSON
-  # Use -p for prompt mode (non-interactive, similar to other CLIs)
-  local cmd="gemini -p --output-format stream-json --model $model"
+  # Gemini CLI uses -p for prompt/non-interactive mode
+  # --output-format stream-json provides newline-delimited JSON events
+  # -m for model selection
+  local cmd="gemini -p --output-format stream-json -m $model"
 
-  # Gemini CLI uses --sandbox=false to allow file operations
-  cmd="$cmd --sandbox=false"
-
-  # Resume session if provided
-  if [[ -n "$session_id" ]]; then
-    cmd="$cmd --resume \"$session_id\""
-  fi
+  # --yolo auto-approves tool operations (similar to --dangerously-skip-permissions)
+  cmd="$cmd --yolo"
 
   echo "$cmd"
 }
